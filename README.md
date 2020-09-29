@@ -18,6 +18,11 @@ Completed initialization in 7 ms
 ....
 ```
 
+# Libraries
+
+This uses:
+* [Spring Boot](https://spring.io/projects/spring-boot)
+* [nimbus jose jwt](https://connect2id.com/products/nimbus-jose-jwt/examples)
 
 # Endpoints
 
