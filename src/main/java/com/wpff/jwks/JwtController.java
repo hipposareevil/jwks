@@ -13,10 +13,16 @@ import org.springframework.web.bind.annotation.RequestParam;
 import java.io.*;
 import java.net.URL;
 import java.net.URI;
-import java.security.*;
 
-import java.security.interfaces.*;
 import java.util.*;
+
+import java.security.*;
+import java.security.KeyFactory;
+import java.security.Signature;
+import java.security.spec.X509EncodedKeySpec;
+import java.security.interfaces.*;
+
+import java.security.cert.*;
 
 import com.nimbusds.jose.*;
 import com.nimbusds.jose.crypto.*;
@@ -35,11 +41,12 @@ public class JwtController {
     // Contains public + private 
     private final KeyPair rsaKeyPair;
     private final KeyPair rsaKeyPair2;
-    private final KeyPair ecKeyPair;
+//    private final KeyPair ecKeyPair;
 
     private final JWK jwk;
     private final JWK jwk2;
-    private final JWK ecJwk;
+//    private final JWK ecJwk;
+    private JWK ecJwk;
 
 
     /**
@@ -57,15 +64,16 @@ public class JwtController {
         rsaKeyPair2 = gen.generateKeyPair();
 
         // Eliptical Curve
+/*
         gen = KeyPairGenerator.getInstance("EC");
         gen.initialize(Curve.P_256.toECParameterSpec());
         ecKeyPair = gen.generateKeyPair();
-
+*/
 
         // Make JWKs
         jwk = makeRsaJwk(rsaKeyPair);
         jwk2 = makeRsaJwk(rsaKeyPair2);
-        ecJwk = makeEcJwk(ecKeyPair);
+//        ecJwk = makeEcJwk(ecKeyPair);
     }
 
 
@@ -90,8 +98,34 @@ public class JwtController {
     }
 
 
+    private java.security.PublicKey toECPub(PublicKey publicKey) throws Exception {
+        KeyFactory kf = KeyFactory.getInstance("EC");
+        return toPub(publicKey, kf);
+    }
+
+    private java.security.PublicKey toPub(PublicKey publicKey, KeyFactory kf) throws Exception {
+        final String publicKeyContent = getPublicKeyContent(publicKey);
+
+        X509EncodedKeySpec keySpecX509 = new X509EncodedKeySpec(Base64.getDecoder().decode(publicKeyContent));
+        final java.security.PublicKey pubKey = kf.generatePublic(keySpecX509);
+        System.out.println("Got pub key as " + pubKey.toString());
+        return pubKey;
+    }
+
+    private String getPublicKeyContent(PublicKey publicKey) {
+        return publicKey.getPublic()
+                .replaceAll("\\n", "")
+                .replace("-----BEGIN PUBLIC KEY-----", "")
+                .replace("-----END PUBLIC KEY-----", "");
+    }
+
+
     // Validate
     private String validateToken(String jwtString) throws Exception {
+        System.out.println("");
+        System.out.println("=====================");
+        System.out.println("");
+
         JWT jwt = null;
         try {
             jwt = JWTParser.parse(jwtString);
@@ -137,9 +171,11 @@ public class JwtController {
                     new RemoteJWKSet<>(jkuUri.toURL());
 
             // Configure the JWT processor with a key selector to feed matching public
-            // RSA keys sourced from the JWK set URL
+            // keys sourced from the JWK set URL
             JWSKeySelector<SecurityContext> keySelector =
                     new JWSVerificationKeySelector<>(expectedJWSAlg, keySource);
+
+            System.out.println("expcted: " + expectedJWSAlg);
 
             jwtProcessor.setJWSKeySelector(keySelector);
 
@@ -148,15 +184,22 @@ public class JwtController {
             jwtProcessor.setJWTClaimsSetVerifier(new DefaultJWTClaimsVerifier(
                     new JWTClaimsSet.Builder().issuer("https://localhost:8080").build(),
                     new HashSet<>(Arrays.asList("sub", "scp", "exp"))));
+
 // FULLSET                    //new HashSet<>(Arrays.asList("sub", "iat", "exp", "scp", "cid", "jti"))));
 // scp, iat, jti, cid]
 
             // Process the token
             SecurityContext ctx = null; // optional context parameter, not required here
+            try {
             JWTClaimsSet claimsSet = jwtProcessor.process(signedJwt, ctx);
 
             // Print out the token claims set
             return claimsSet.toJSONObject().toString();
+            } catch (com.nimbusds.jose.proc.BadJWSException e) {
+                e.printStackTrace();
+                System.out.println(e.getMessage());
+                System.out.println(e.getCause());
+            }
 
         } else if (jwt instanceof EncryptedJWT) {
             EncryptedJWT jweObject = (EncryptedJWT) jwt;
@@ -172,6 +215,77 @@ public class JwtController {
     // endpoints
     // 
     ///////////////////////////////////////////////////////////    
+
+
+
+    // Create JWT
+    @RequestMapping("/gotJwtEC")
+    public String gotJwtEC(@RequestParam String scope) throws Exception {
+        // Get privatekey and kid
+/*
+        String kid = ecJwk.getKeyID();
+        PrivateKey privateKey = ecKeyPair.getPrivate();
+*/
+        String kid = "1:2:E00CB9B35823BD2AAB612E696E21A63622BB9A432A2F282911056A228C29B92F:6b892768-4557-45b1-92d8-9a03f468c37e";
+
+        // Prepare JWT with claims set
+        JWTClaimsSet claimsSet = new JWTClaimsSet.Builder()
+                .subject("got milk?")
+                .claim("scp", scope)
+                .issuer("https://localhost:8080")
+                .expirationTime(new Date(new Date().getTime() + 60 * 1000))
+                .build();
+
+        com.nimbusds.jose.util.Base64URL claims_base64 = new Payload(claimsSet.toJSONObject())
+                .toBase64URL();
+
+        JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.ES256)
+                .keyID(kid)
+                .jwkURL(new URI("http://localhost:8080/.well-known/jwks.json"))
+                .build();
+        com.nimbusds.jose.util.Base64URL header_base64 = header.toBase64URL();
+
+        System.out.println("header");
+        System.out.println(header_base64);
+
+        System.out.println("claims/payload:");
+        System.out.println(claims_base64);
+
+        String signature = "TUZrd0V3WUhLb1pJemowQ0FRWUlLb1pJemowREFRY0RRZ0FFNzZIUmRmaXp1RUM0QWMyZWsyenFreTF0R2NtYwpuMGl6Y2lnd3FXM1VVUHdyMHNFTU8wdlo3QUNybklObmJ5UFJpNW5CbHZoNnNOekVJR0lRUnlGMFFnPT0K";
+        com.nimbusds.jose.util.Base64URL signature_base64 = new
+                com.nimbusds.jose.util.Base64URL(signature);
+
+        // public
+//        String public_key = "TUZrd0V3WUhLb1pJemowQ0FRWUlLb1pJemowREFRY0RRZ0FFNzZIUmRmaXp1RUM0QWMyZWsyenFreTF0R2NtYwpuMGl6Y2lnd3FXM1VVUHdyMHNFTU8wdlo3QUNybklObmJ5UFJpNW5CbHZoNnNOekVJR0lRUnlGMFFnPT0K";
+        String public_key = "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE76HRdfizuEC4Ac2ek2zqky1tGcmc\nn0izcigwqW3UUPwr0sEMO0vZ7ACrnINnbyPRi5nBlvh6sNzEIGIQRyF0Qg==\n-----END PUBLIC KEY-----";
+
+        JWK publicJwk = JWK.parseFromPEMEncodedObjects(public_key);
+        ecJwk = publicJwk;
+
+        System.out.println(publicJwk.toJSONObject());
+        System.out.println(publicJwk.toJSONString());
+
+
+        JWK publicJwktwo = new com.nimbusds.jose.jwk.ECKey.Builder(Curve.P_256,
+                                                                   (ECPublicKey) publicJwk.toECKey().toPublicKey()
+                                                                   )
+                .keyID(kid)
+                .build();
+
+        ecJwk = publicJwktwo;
+
+//{"kty":"EC","crv":"P-256","x":"76HRdfizuEC4Ac2ek2zqky1tGcmcn0izcigwqW3UUPw","y":"K9LBDDtL2ewAq5yDZ28j0YuZwZb4erDcxCBiEEchdEI"}
+
+
+        // signed
+        SignedJWT signedJWT = new SignedJWT(
+            header_base64,
+            claims_base64,
+            signature_base64);
+
+        String s = signedJWT.serialize();
+        return s;
+    }
 
 
     // Create JWT
