@@ -68,7 +68,7 @@ public class Kms {
         byte[] decodedSignatureString = Base64.getDecoder().decode(signatureString.getBytes());
         System.out.println("signkeys signature: " + signatureString);
 
-        boolean verified = this.keyServiceClient.checkSignature(signatureString, dataToSign);
+        boolean verified = this.keyServiceClient.checkSignature(dataToSign, signatureString);
         System.out.println("verified? " + verified);
 
         return signature.getSignature();

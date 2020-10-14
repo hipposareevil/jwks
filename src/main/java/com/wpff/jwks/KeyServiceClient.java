@@ -92,6 +92,15 @@ public class KeyServiceClient {
         return this.cachePublicKey;
     }
 
+    public String getKeyId() {
+        return keyId;
+    }
+
+    public String getCurrentKeyVersion() {
+        return currentKeyVersion;
+    }
+
+
     /**
      * Sign the incoming data and return the SmsSignature, from which you can get the
      * base64 encoded string.
@@ -115,14 +124,17 @@ public class KeyServiceClient {
      * Validate if the signature verifies against the incoming raw data.
      * This will use the current public key
      *
-     * @param signature base64 encoded signature
      * @param rawData what was signed
+     * @param signature base64 encoded signature
      * @return
      */
-    public boolean checkSignature(String signature, String rawData) throws Exception {
+    public boolean checkSignature(String rawData, String signature) throws Exception {
         byte[] decodedSignature = Base64.getDecoder().decode(signature.getBytes());
         java.security.Signature signer = Signature.getInstance(ENCODING);
         java.security.PublicKey publicKey = getPublicKey();
+
+        System.out.println("CHECK SIGNATURE: algo: " + publicKey.getAlgorithm());
+        System.out.println("CHECK SIGNATURE: format: " + publicKey.getFormat());
 
         // Initialize signer with public key
         signer.initVerify(publicKey);

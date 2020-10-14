@@ -1,9 +1,11 @@
 package com.wpff.jwks;
 
-import com.nimbusds.jose.proc.DefaultJOSEObjectTypeVerifier;
-import com.nimbusds.jose.proc.JWSKeySelector;
+import com.nimbusds.jose.crypto.impl.ECDSA;
+import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jose.util.Base64URL;
+import com.salesforce.sds.kms.client.kmsOpenAPIJavaClient.model.SmsSignature;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -11,24 +13,18 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 
-import java.io.*;
-import java.net.URL;
 import java.net.URI;
 
 import java.util.*;
 
 import java.security.*;
 import java.security.KeyFactory;
-import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
 import java.security.interfaces.*;
-
-import java.security.cert.*;
 
 import com.nimbusds.jose.*;
 import com.nimbusds.jose.crypto.*;
 import com.nimbusds.jose.jwk.*;
-import com.nimbusds.jose.jwk.gen.*;
 import com.nimbusds.jose.jwk.source.*;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jwt.*;
@@ -47,17 +43,13 @@ public class JwtController {
     private final JWK jwk;
     private final JWK jwk2;
 
-    // eliptic curve
+    // elliptic curve
     private JWK ecJwk;
-    private String ecKid = "1:2:E00CB9B35823BD2AAB612E696E21A63622BB9A432A2F282911056A228C29B92F:2861f689-4e24-4999-ab97-f0541ba2d288";
-    private String ecKidVersion = "042801c0-b7eb-4da9-ac65-f90eda4f02a2";
-    private String ecSignature = "MEUCIQC5kfP8fQFVKAjcfLZhmAQ7yLlcRoTUJlwUSmnBuL3n/QIgU9UHpT+audmNmOnmiN79HZI8z4h+h1ijjO1lmOdCHCY=";
 
-    private String payload = "test";
-    private String payload_64 = "dGVzdAo=";
+    private com.nimbusds.jose.jwk.ECKey theirJwk;
 
-    private com.nimbusds.jose.util.Base64URL signature_base64;
-    private String ec_public_key;
+    // Interact with kms service
+    private KeyServiceClient keyClient = KeyServiceClient.getClient();
 
     /**
      * Create EC and RSA keys
@@ -78,61 +70,17 @@ public class JwtController {
         jwk2 = makeRsaJwk(rsaKeyPair2);
 
         //////////////
-        // EC
+        // elliptic curve
 
-        // KID
-
-
-        // JWT payload   first 2 parts
-/*
-eyJqa3UiOiJodHRwOlwvXC9sb2NhbGhvc3Q6ODA4MFwvLndlbGwta25vd25cL2p3a3MuanNvbiIsImFsZyI6IkVTMjU2In0.eyJpc3MiOiJodHRwczpcL1wvbG9jYWxob3N0OjgwODAiLCJzdWIiOiJnb3QgbWlsaz8iLCJzY3AiOiJkb2l0IiwiZXhwIjoxNjAyMTkxMTY5fQ
-
-base64:
-ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVjTDJwM2EzTXVhbk52YmlJc0ltRnNaeUk2SWtWVE1qVTJJbjAuZXlKcGMzTWlPaUpvZEhSd2N6cGNMMXd2Ykc5allXeG9iM04wT2pnd09EQWlMQ0p6ZFdJaU9pSm5iM1FnYldsc2F6OGlMQ0p6WTNBaU9pSmtiMmwwSWl3aVpYaHdJam94TmpBeU1Ua3hNVFk1ZlEK
-*/
+        // this is public JWK, nothing to do signing yet
+        this.ecJwk = makeEcJwk();
 
 
-        // SIGNATURE
-        // base64 encoded
+        // Test theirs
+        theirJwk = new ECKeyGenerator(Curve.P_256)
+                .keyID("666321")
+                .generate();
 
-        // base64 encoded
-        String data = Base64.getEncoder().encodeToString(ecSignature.getBytes());
-        // Saved as base64
-        signature_base64 = new com.nimbusds.jose.util.Base64URL(data);
-
-        System.out.println("");
-        System.out.println("signature: ");
-        System.out.println(ecSignature);
-
-        System.out.println("");
-        System.out.println("signature base64 encoded: ");
-        System.out.println(signature_base64);
-
-        // make from parsed string
-        ec_public_key =
-                "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEidprkZQXWu+MVdqgETWr6w1SjG3mlGnAbcilJj7lpOat7+6P/QouEWWS1+SeMXFBlP16bs5+Ili0JvYAfMjLRA==";
-
-        java.security.PublicKey publicKey = toECPub(ec_public_key);
-/*
-        JWK publicJwk = JWK.parseFromPEMEncodedObjects(ec_public_key);
-        System.out.println("public JWK output:");
-        System.out.println(publicJwk.toJSONObject());
-
-        // Make real JWK, adding the kid as well
-        ecJwk = new com.nimbusds.jose.jwk.ECKey.Builder(
-            Curve.P_256,
-            (ECPublicKey) publicJwk.toECKey().toPublicKey())
-                .keyID(ecKid)
-                .build();
-*/
-        ecJwk = new com.nimbusds.jose.jwk.ECKey.Builder(
-            Curve.P_256,
-                (ECPublicKey) publicKey)
-                .keyID(ecKid)
-                .build();
-        
-        System.out.println("ecJwk: " + ecJwk);
-        System.out.println("ecJwk: " + ecJwk.toECKey().toPublicKey());
     }
 
 
@@ -147,10 +95,20 @@ ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVj
         return jwk;
     }
 
-    // Make jwk from EC keypair
-    private JWK makeEcJwk(KeyPair keyPair) {
-        JWK jwk = new com.nimbusds.jose.jwk.ECKey.Builder(Curve.P_256, (ECPublicKey) keyPair.getPublic())
-                .privateKey((ECPrivateKey) keyPair.getPrivate())
+    /**
+     * Make an EC JWK
+     *
+     * @return
+     */
+    private JWK makeEcJwk() throws Exception {
+        // Make JWK from public key
+        java.security.PublicKey publicKey = this.keyClient.getPublicKey();
+        String keyId = this.keyClient.getKeyId();
+
+        JWK jwk = new com.nimbusds.jose.jwk.ECKey.Builder(
+                Curve.P_256,
+                (ECPublicKey) publicKey)
+                .keyID(keyId)
                 .build();
 
         return jwk;
@@ -178,7 +136,7 @@ ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVj
         } else if (jwt instanceof SignedJWT) {
             // SIGNED
             SignedJWT signedJwt = (SignedJWT) jwt;
-            
+
             // debug log
             System.out.println("HEADER: " + signedJwt.getHeader());
 
@@ -250,7 +208,12 @@ ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVj
     // Validate EC token
     private String validateTokenEc(String jwtString) throws Exception {
         System.out.println("");
+        System.out.println("");
         System.out.println("=====================");
+        System.out.println("VALIDATE TOKEN EC");
+        System.out.println("=====================");
+        System.out.println("");
+        System.out.println("STRING: " + jwtString);
         System.out.println("");
 
         JWT jwt = null;
@@ -268,12 +231,12 @@ ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVj
         } else if (jwt instanceof SignedJWT) {
             // SIGNED
             SignedJWT signedJwt = (SignedJWT) jwt;
-            
-            // debug log
-            System.out.println("HEADER: " + signedJwt.getHeader());
 
             // Get header information: jku, alg
             URI jkuUri = signedJwt.getHeader().getJWKURL();
+            System.out.println();
+            System.out.println("JKU: " + jkuUri);
+            System.out.println();
 
             // Get alg from header
 //            JWSAlgorithm expectedJWSAlg = JWSAlgorithm.RS256;
@@ -303,51 +266,75 @@ ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVj
             JWSVerificationKeySelector<SecurityContext> keySelector =
                     new JWSVerificationKeySelector<>(expectedJWSAlg, keySource);
 
+            // Public key
+            JWKMatcher matcher = new JWKMatcher.Builder().keyID(this.keyClient.getKeyId()).build();
+            JWKSelector selector = new JWKSelector(matcher);
+            JWKSource<SecurityContext> source = keySelector.getJWKSource();
+            List<JWK> jwks = source.get(selector, null);
+            System.out.println();
+            System.out.println("get JWKs from JWK Source (wellknown):");
+            jwks.forEach(System.out::println);
+
+            JWK first = jwks.get(0);
+            java.security.PublicKey publicKey = first.toECKey().toPublicKey();
+            // Get java publickey
+            System.out.println("public key:");
+            System.out.println(publicKey);
+
+            System.out.println();
+            System.out.println();
+            Base64URL[] parsedParts = jwt.getParsedParts();
+            System.out.println("parsed parts");
+            Arrays.stream(parsedParts).forEach(System.out::println);
+
+            // debug log
+            System.out.println("");
+            System.out.println("HEADER: " + signedJwt.getHeader());
+            System.out.println("");
+            System.out.println("PAYLOAD: " + signedJwt.getPayload());
+            System.out.println("");
+            System.out.println("SIGNATURE");
+            System.out.println(signedJwt.getSignature());
+            System.out.println(signedJwt.getSignature().toString());
+            System.out.println(signedJwt.getSignature().decodeToString());
+
             System.out.println("");
             System.out.println("---------------------");
             System.out.println("expected algorithm: " + expectedJWSAlg);
             System.out.println("expected kid: " + kid);
             System.out.println("key selector: " + keySelector);
             System.out.println(keySelector.getJWKSource());
-            System.out.println(keySelector.isAllowed(expectedJWSAlg));
+            System.out.println("is allowed by key selector? " + keySelector.isAllowed(expectedJWSAlg));
             System.out.println();
+            System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
 
-            // TEST
-            JWKMatcher matcher = new JWKMatcher.Builder().keyID(this.ecKid).build();
-            JWKSelector selector = new JWKSelector(matcher);
-            JWKSource<SecurityContext> source = keySelector.getJWKSource();
-            List<JWK> jwks = source.get(selector, null);
-            System.out.println("get JWKs:");
-            jwks.forEach(System.out::println);
+            try {
+                System.out.println("");
+                System.out.println("KMS verification");
+                System.out.println("");
 
-            JWK first = jwks.get(0);
-            java.security.PublicKey publicKey = first.toECKey().toPublicKey();
-            // Get java publickey
-            System.out.println(publicKey);
+                String headerAndPayload = signedJwt.getHeader().toBase64URL().toString() + "." +
+                        signedJwt.getPayload().toBase64URL().toString();
+                System.out.println("header + payload: " + headerAndPayload);
+                System.out.println();
+                String base64signature = signedJwt.getSignature().toString();
+                System.out.println("base64signature: " + base64signature);
+                System.out.println("");
+                System.out.println("die?");
 
-            // Verify signature
-            Signature signer = Signature.getInstance("SHA256withECDSA");
-            signer.initVerify(publicKey);
+                boolean valid = this.keyClient.checkSignature(
+                        headerAndPayload, base64signature
+                );
+                System.out.println("VERIFY using KMS: " + valid);
+            }
+            catch (Exception e){
+                System.out.println("ERROR in verify with KMS");
+                System.out.println(e.getMessage());
+            }
 
-            // payload is first 2 parts of JWT
-            String jwtPayload = "eyJqa3UiOiJodHRwOlwvXC9sb2NhbGhvc3Q6ODA4MFwvLndlbGwta25vd25cL2p3a3MuanNvbiIsImtpZCI6IjE6MjpFMDBDQjlCMzU4MjNCRDJBQUI2MTJFNjk2RTIxQTYzNjIyQkI5QTQzMkEyRjI4MjkxMTA1NkEyMjhDMjlCOTJGOjZiODkyNzY4LTQ1NTctNDViMS05MmQ4LTlhMDNmNDY4YzM3ZSIsImFsZyI6IkVTMjU2In0.eyJpc3MiOiJodHRwOlwvXC9sb2NhbGhvc3Q6ODA4MCIsInN1YiI6ImdvdCBtaWxrPyIsInNjcCI6ImRvaXRtZW93IiwiZXhwIjoxNjAyMjY3OTM3fQ";
-
-            // base64encoded
-            String jwtPayload64 = "ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVjTDJwM2EzTXVhbk52YmlJc0ltRnNaeUk2SWtWVE1qVTJJbjAuZXlKcGMzTWlPaUpvZEhSd2N6cGNMMXd2Ykc5allXeG9iM04wT2pnd09EQWlMQ0p6ZFdJaU9pSm5iM1FnYldsc2F6OGlMQ0p6WTNBaU9pSmtiMmwwSWl3aVpYaHdJam94TmpBeU1Ua3hNVFk1ZlEK";
-
-//            signer.update(jwyPayload64.getBytes());
-            signer.update("foo".getBytes());
-//            signer.update(jwyPayload.getBytes());
-
-            byte[] signature = signedJwt.getSignature().decode();
-            System.out.println("signedJwt. signature: " + new String(signature));
-            boolean verified = signer.verify(signature);
-
-            System.out.println("XXXXXXXXXXXX " + verified);
-
-            System.out.println("end test");
-            System.out.println("---------------------");
-            // End TEST
+            System.out.println("");
+            System.out.println("%%%%%%%%%%%%%%%%%%%%%%%%%%%");
+            System.out.println("");
 
             // Process
             jwtProcessor.setJWSKeySelector(keySelector);
@@ -358,13 +345,9 @@ ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVj
                     new JWTClaimsSet.Builder().issuer(HOST).build(),
                     new HashSet<>(Arrays.asList("sub", "scp", "exp"))));
 
-// FULLSET                    //new HashSet<>(Arrays.asList("sub", "iat", "exp", "scp", "cid", "jti"))));
-// scp, iat, jti, cid]
-
             // Process the token
-            SecurityContext ctx = null; // optional context parameter, not required here
             try {
-                JWTClaimsSet claimsSet = jwtProcessor.process(signedJwt, ctx);
+                JWTClaimsSet claimsSet = jwtProcessor.process(signedJwt, (SecurityContext) null);
 
                 // Print out the token claims set
                 return claimsSet.toJSONObject().toString();
@@ -384,61 +367,59 @@ ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVj
     }
 
 
-
     ///////////////////////////////////////////////////////////
     // 
     // endpoints
     // 
     ///////////////////////////////////////////////////////////    
 
+    // Create JWT
+    @RequestMapping("/ec/gotJwt_base")
+    public String gotJwtEC_base(@RequestParam String scope) throws Exception {
+               // Prepare JWT with claims set
+        JWTClaimsSet claimsSet = new JWTClaimsSet.Builder()
+                .subject("got beer?")
+                .issuer(HOST)
+                .claim("scp", "superscope")
+                .expirationTime(new Date(new Date().getTime() + 60 * 1000))
+                .build();
+
+        // Create the EC signer
+        JWSSigner signer = new ECDSASigner(theirJwk);
+
+        SignedJWT signedJWT = new SignedJWT(
+                new JWSHeader.Builder(JWSAlgorithm.ES256)
+                        .keyID(theirJwk.getKeyID())
+                        .jwkURL(new URI(WELL_KNOWN))
+                        .build(),
+                claimsSet);
+
+        // Compute the EC signature
+        signedJWT.sign(signer);
+
+        String base64signature = signedJWT.getSignature().toString();
+        System.out.println("base64 signature: " + base64signature);
+
+        // Serialize the JWS to compact form
+        String s = signedJWT.serialize();
+
+        // CLIENT test
+        System.out.println();
+        System.out.println("----------------------------------");
+        System.out.println("Verify via ECDSA:");
+        System.out.println();
+        SignedJWT clientside = SignedJWT.parse(s);
+        com.nimbusds.jose.jwk.ECKey ecPublicJWK = theirJwk.toPublicJWK();
+        JWSVerifier verifier = new ECDSAVerifier(ecPublicJWK);
+
+        boolean result = clientside.verify(verifier);
+        System.out.println("RESULT: " + result);
 
 
-    @RequestMapping("/test")
-    public String test() throws Exception {
-        // payload
-        String clear = this.payload;
-        String base64 = this.payload_64;
-        String signature = ecSignature;
-        
-        System.out.println("payload: " + base64);
-        System.out.println("signature: " + signature);
+        // CLIENT
 
-        PublicKey publicKey = null;
-/*
-        JWK publicJwk = JWK.parseFromPEMEncodedObjects(ec_public_key);
-        System.out.println("public JWK output:");
-        System.out.println(publicJwk.toJSONObject());
-
-        // Get public key
-        publicKey = publicJwk.toECKey().toPublicKey();
-        System.out.println("-------");
-        System.out.println("1: " + publicKey);
-        System.out.println("-------");
-*/
-
-        publicKey = toECPub(ec_public_key);
-        System.out.println("-------");
-        System.out.println("2: " + publicKey);
-        System.out.println("-------");
-
-        // Verify signature
-        Signature signer = Signature.getInstance("SHA256withECDSA");
-        // initialize with public key
-        signer.initVerify(publicKey);
-
-        // update with payload
-//        signer.update(clear.getBytes());
-        signer.update(base64.getBytes());
-
-        // verify the signature
-        boolean verified = signer.verify(Base64.getDecoder().decode(signature.getBytes()));
-
-        System.out.println("Verified? " + verified);
-
-        return "done";
+        return s;
     }
-
-
 
 
     // Create JWT
@@ -461,33 +442,55 @@ ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVj
                 .toBase64URL();
 
         // Header
+        String keyId = this.keyClient.getKeyId();
         JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.ES256)
-                .keyID(this.ecKid)
+                .keyID(keyId)
                 .jwkURL(new URI(WELL_KNOWN))
                 .build();
         // convert to base64url
         com.nimbusds.jose.util.Base64URL header_base64 = header.toBase64URL();
 
-
         System.out.println("");
         System.out.println("header");
         System.out.println(header_base64);
+        System.out.println(header_base64.decodeToString());
 
         System.out.println("");
         System.out.println("claims/payload:");
         System.out.println(claims_base64);
+        System.out.println(claims_base64.decodeToString());
 
+        String dataToSign = header_base64.toString() +
+                "." +
+                claims_base64.toString();
+
+        System.out.println("");
+        System.out.println("DATA: " + dataToSign);
+
+        // Make signature, this will be base64 encoded
+        SmsSignature signature = this.keyClient.signData(dataToSign);
+        String signatureAsString = signature.getSignature();
+        Base64URL signature_base64 = new Base64URL(signatureAsString);
+
+        // TEST
+        byte[] der = ECDSA.transcodeSignatureToDER(signature.getSignature().getBytes());
+
+        int rsByteArrayLength = ECDSA.getSignatureByteArrayLength(header.getAlgorithm());
+		//byte[] jwsSignature = ECDSA.transcodeSignatureToConcat(signature.getSignature().getBytes(), rsByteArrayLength);
+        byte[] jwsSignature = ECDSA.transcodeSignatureToConcat(der, rsByteArrayLength);
+        System.out.println("FOOOO: sign. jwsSignature: " + new String(jwsSignature));
+        signature_base64 = Base64URL.encode(jwsSignature);
+        // END TEST
 
         // sign with the 3 parts
         SignedJWT signedJWT = new SignedJWT(
-            header_base64,
-            claims_base64,
-            this.signature_base64);
+                header_base64,
+                claims_base64,
+                signature_base64);
 
         System.out.println("");
-        System.out.println("signature: " + new String(this.signature_base64.decode()));
+        System.out.println("signature: \n" + new String(signature.getSignature()));
         System.out.println("");
-
 
         System.out.println("------------------------------------------");
         try {
@@ -500,35 +503,19 @@ ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVj
             System.out.println(publicKey);
             System.out.println("");
 
-            Signature signer = Signature.getInstance("SHA256withECDSA");
-            signer.initVerify(publicKey);
+            String headerAndPayload = signedJWT.getHeader().toBase64URL().toString() + "." +
+                    signedJWT.getPayload().toBase64URL().toString();
 
-            // signature is not base64 encoded now
-            byte[] signature = this.signature_base64.decode();
-            System.out.println("signature: " + new String(signature));
-            System.out.println("signature: " + this.signature_base64);
+            System.out.println("header payload: " + headerAndPayload);
+            String base64signature = signedJWT.getSignature().toString();
 
-            ///////
-            // have signer verify the signature
+            System.out.println("signature from JWT: ");
+            System.out.println(base64signature);
 
-            // base64 encoded
-            String payload64 = "ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVjTDJwM2EzTXVhbk52YmlJc0ltRnNaeUk2SWtWVE1qVTJJbjAuZXlKcGMzTWlPaUpvZEhSd2N6cGNMMXd2Ykc5allXeG9iM04wT2pnd09EQWlMQ0p6ZFdJaU9pSm5iM1FnYldsc2F6OGlMQ0p6WTNBaU9pSmtiMmwwSWl3aVpYaHdJam94TmpBeU1Ua3hNVFk1ZlEK";
-
-            String payload = "eyJqa3UiOiJodHRwOlwvXC9sb2NhbGhvc3Q6ODA4MFwvLndlbGwta25vd25cL2p3a3MuanNvbiIsImFsZyI6IkVTMjU2In0.eyJpc3MiOiJodHRwczpcL1wvbG9jYWxob3N0OjgwODAiLCJzdWIiOiJnb3QgbWlsaz8iLCJzY3AiOiJkb2l0IiwiZXhwIjoxNjAyMTkxMTY5fQ";
-
-            // From 'foo'
-//            payload64 = "Zm9vCg==";
-            payload64 = "foo";
-
-            signer.update(payload64.getBytes());
-
-            // test
-            boolean verified = signer.verify(Base64.getDecoder().decode(signature));
-//            boolean verified = signer.verify(signature);
-//            boolean verified = signer.verify(ecSignature.getBytes());
-
-            System.out.println("VERIFY: " + verified);
-
+            boolean valid = this.keyClient.checkSignature(
+                    headerAndPayload, base64signature
+            );
+            System.out.println("VERIFY: " + valid);
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -536,32 +523,12 @@ ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVj
 
         System.out.println("------------------------------------------");
 
+        Base64URL[] parsedParts = signedJWT.getParsedParts();
+        System.out.println("parsed parts");
+        Arrays.stream(parsedParts).forEach(System.out::println);
 
         return signedJWT.serialize();
     }
-
-    private java.security.PublicKey toECPub(String publicKey) throws Exception {
-        KeyFactory kf = KeyFactory.getInstance("EC");
-        return toPub(publicKey, kf);
-    }
-
-    private java.security.PublicKey toPub(String publicKey, KeyFactory kf) throws Exception {
-//        final String publicKeyContent = getPublicKeyContent(publicKey);
-        final String publicKeyContent = publicKey;
-
-        X509EncodedKeySpec keySpecX509 = new X509EncodedKeySpec(Base64.getDecoder().decode(publicKeyContent));
-        final java.security.PublicKey pubKey = kf.generatePublic(keySpecX509);
-        return pubKey;
-    }
-
-    private String getPublicKeyContent(String pub) {
-        return pub
-                .replaceAll("\\n", "")
-                .replace("-----BEGIN PUBLIC KEY-----", "")
-                .replace("-----END PUBLIC KEY-----", "");
-    }
-
-
 
 
     // Create JWT
@@ -608,11 +575,12 @@ ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVj
 
     // JWKS!
     @RequestMapping("/.well-known/jwks.json")
-    public Map<String, Object> jwks2() throws Exception {
+    public Map<String, Object> jwks() throws Exception {
         List<JWK> keys = new ArrayList<JWK>();
         keys.add(jwk.toPublicJWK());
         keys.add(jwk2.toPublicJWK());
         keys.add(ecJwk.toPublicJWK());
+        keys.add(theirJwk.toPublicJWK());
 
         JWKSet set = new JWKSet(keys);
         return set.toJSONObject(true);
@@ -627,8 +595,10 @@ ZXlKcWEzVWlPaUpvZEhSd09sd3ZYQzlzYjJOaGJHaHZjM1E2T0RBNE1Gd3ZMbmRsYkd3dGEyNXZkMjVj
 
     // Validate jwt
     @PostMapping("/ec/validate")
-    String validateEc(@RequestBody String jwt) throws Exception {
-        String result = validateTokenEc(jwt);
+    String validateEc(@RequestBody JwtData jwt) throws Exception {
+        System.out.println("VALIDATE EC");
+        System.out.println(jwt.data);
+        String result = validateTokenEc(jwt.data);
         return result;
     }
 
