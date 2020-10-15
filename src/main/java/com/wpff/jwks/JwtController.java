@@ -5,11 +5,8 @@ import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jose.util.Base64URL;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.*;
 
 
 import java.net.URI;
@@ -32,8 +29,8 @@ import com.nimbusds.jwt.proc.*;
 @RestController
 public class JwtController {
 
-    private static final String HOST = "http://localhost:8080";
-    private static final String WELL_KNOWN = HOST + "/.well-known/jwks.json";
+    @Value("${host}")
+    private String host;
 
     // Contains public + private 
     private final KeyPair rsaKeyPair;
@@ -44,11 +41,11 @@ public class JwtController {
 
     private com.nimbusds.jose.jwk.ECKey theirJwk;
 
-
     /**
      * Create EC and RSA keys
      */
-    public JwtController() throws Exception {
+    public JwtController(@Value("${supervalue}") String foo )
+                         throws Exception {
         // RSA keys
         // Generate the RSA key pair
         KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
@@ -71,7 +68,6 @@ public class JwtController {
         theirJwk = new ECKeyGenerator(Curve.P_256)
                 .keyID("666321")
                 .generate();
-
     }
 
 
@@ -149,7 +145,7 @@ public class JwtController {
             // Set the required JWT claims for access tokens issued by the Connect2id
             // server, may differ with other servers
             jwtProcessor.setJWTClaimsSetVerifier(new DefaultJWTClaimsVerifier(
-                    new JWTClaimsSet.Builder().issuer(HOST).build(),
+                    new JWTClaimsSet.Builder().issuer(this.host).build(),
                     new HashSet<>(Arrays.asList("sub", "scp", "exp"))));
 
 // FULLSET                    //new HashSet<>(Arrays.asList("sub", "iat", "exp", "scp", "cid", "jti"))));
@@ -184,6 +180,10 @@ public class JwtController {
         System.out.println("-------");
         System.out.println("gotJwt");
 
+
+        String well_known_uri = this.host + "/.well-known/jwks.json";
+        System.out.println("URI: " + well_known_uri);
+
         // Get privatekey and kid
         String kid = jwk.getKeyID();
         PrivateKey privateKey = rsaKeyPair.getPrivate();
@@ -196,14 +196,14 @@ public class JwtController {
         JWTClaimsSet claimsSet = new JWTClaimsSet.Builder()
                 .subject("got milk?")
                 .claim("scp", scope)
-                .issuer(HOST)
+                .issuer(this.host)
                 .expirationTime(new Date(new Date().getTime() + 60 * 1000))
                 .build();
 
         SignedJWT signedJWT = new SignedJWT(
                 new JWSHeader.Builder(JWSAlgorithm.RS256)
                         .keyID(kid)
-                        .jwkURL(new URI(WELL_KNOWN))
+                        .jwkURL(new URI(well_known_uri))
                         .build(),
                 claimsSet);
 
