@@ -6,6 +6,7 @@ import com.salesforce.sds.kms.client.wrapper.DynamicKeyStoreConfig;
 import com.salesforce.sds.kms.client.wrapper.KmsClient;
 
 
+import java.io.File;
 import java.security.KeyFactory;
 import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
@@ -27,13 +28,13 @@ public class KeyServiceClient {
 
     // Public CA for server
     // in k8s: /etc/identity/ca
-    public static final String CA_PATH = "/work/scratch/kms/dktool_repo/ca";
+    public static final String CA_PATH = "/tmp/kms/dktool_repo/ca";
 
     // This is where client (our) pems files are:
     // dktool_repo/user/client/certificates/client.pem
     // dktool_repo/user/client/keys/client-key.pem
     // in k8s: /etc/identity/client
-    public static final String MONITORING_DIR = "/work/scratch/kms/dktool_repo/user/client";
+    public static final String MONITORING_DIR = "/tmp/kms/dktool_repo/user/client";
 
     // Role for creating the Tenant
     public static final String ROLE = "hawking.superfunk";
@@ -56,6 +57,16 @@ public class KeyServiceClient {
      * Create client to KMS api.  Get current key version
      */
     public KeyServiceClient() {
+        // validate the paths
+        File ca = new File(CA_PATH);
+        if (! ca.exists() || ! ca.canRead()) {
+            System.out.println("NO CA PATH: " + CA_PATH);
+        }
+        File md = new File(MONITORING_DIR);
+        if (! md.exists() || ! ca.canRead()) {
+            System.out.println("NO monitoring PATH: " + MONITORING_DIR);
+        }
+
         this.client = new KmsClient.KmsClientBuilder()
                 .withBaseUrl("https://api.kms.crypto.dev1-uswest2.aws.sfdc.cl")
                 .withDynamicKeyStoreConfig(new DynamicKeyStoreConfig(CA_PATH, MONITORING_DIR))
@@ -78,15 +89,18 @@ public class KeyServiceClient {
     }
 
     private java.security.PublicKey cachePublicKey = null;
+
     /**
-     * Get java.security PublicKey. Caches the key.
+     * Get java.security PublicKey from KMS. Caches the key.
      *
      * @return public key
      * @throws Exception
      */
     public java.security.PublicKey getPublicKey() throws Exception {
         if (cachePublicKey == null) {
-            PublicKey kmsPublicKey = client.kmsApi().getPublicKey(this.keyId, this.currentKeyVersion, null, null);
+            PublicKey kmsPublicKey = client.
+                    kmsApi().
+                    getPublicKey(this.keyId, this.currentKeyVersion, null, null);
             this.cachePublicKey = toECPub(kmsPublicKey);
         }
         return this.cachePublicKey;
