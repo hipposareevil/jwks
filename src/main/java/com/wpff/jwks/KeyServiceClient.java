@@ -39,6 +39,8 @@ public class KeyServiceClient {
     // Role for creating the Tenant
     public static final String ROLE = "hawking.superfunk";
 
+    public static final String baseUrl = "https://api.kms.crypto.dev1-uswest2.aws.sfdc.cl";
+
     // KMS client
     private final KmsClient client;
 
@@ -67,12 +69,14 @@ public class KeyServiceClient {
             System.out.println("NO monitoring PATH: " + MONITORING_DIR);
         }
 
+        System.out.println("Using KMS endpoint: " + baseUrl);
         this.client = new KmsClient.KmsClientBuilder()
-                .withBaseUrl("https://api.kms.crypto.dev1-uswest2.aws.sfdc.cl")
+                .withBaseUrl(baseUrl)
                 .withDynamicKeyStoreConfig(new DynamicKeyStoreConfig(CA_PATH, MONITORING_DIR))
                 .build();
 
         KeyVersionList keyVersions = null;
+        System.out.println("Getting key versions for keyid: " + keyId);
         try {
             keyVersions = this.client.kmsApi().listKeyVersions(keyId, null, null, true,
                     false, false, 10, null);
@@ -81,7 +85,7 @@ public class KeyServiceClient {
         }
 
         // Get current key version
-        if (keyVersions.getItems().size() >= 1) {
+        if (keyVersions != null && keyVersions.getItems().size() >= 1) {
             KeyVersion version = keyVersions.getItems().get(0);
             this.currentKeyVersion = version.getVersionId().toString();
         }
