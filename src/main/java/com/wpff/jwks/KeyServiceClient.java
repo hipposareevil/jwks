@@ -23,8 +23,7 @@ import java.util.Base64;
 public class KeyServiceClient {
 
     // current key in KMS
-    private String keyId =
-            "1:2:E00CB9B35823BD2AAB612E696E21A63622BB9A432A2F282911056A228C29B92F:e2886d55-04f1-4323-b1a7-c21224a40394";
+    private String keyId = "";
 
     // Retrieve first current key from api
     private String currentKeyVersion = null;
@@ -102,24 +101,50 @@ public class KeyServiceClient {
                 .withDynamicKeyStoreConfig(new DynamicKeyStoreConfig(CA_PATH, MONITORING_DIR))
                 .build();
 
-        KeyVersionList keyVersions = null;
-        System.out.println("Getting key versions for keyid: " + keyId);
         try {
-            keyVersions = this.client.kmsApi().listKeyVersions(keyId,
-                    null, null, true,
-                    false, true, 10, null);
-        } catch (ApiException e) {
-            e.printStackTrace();
+            // Get key id
+            String xSFDCCustomerID = null;
+            String xCorrelationID = null;
+            String tag = null;
+            String token = null;
+            Integer maxresults = 10; // Integer |
+            Boolean retired = false; // Boolean |
+            String role = ROLE;
+            String host = null;
+            String cluster = null;
+            String customerid = null;
+            String cloudaccount = null;
+            String cloudrole = null;
+            String kingdom = null;
+            FindKeysList result = this.client.kmsApi().findKeys(xSFDCCustomerID,
+                    xCorrelationID,
+                    tag,
+                    token,
+                    maxresults,
+                    retired,
+                    role,
+                    host,
+                    cluster,
+                    customerid,
+                    cloudaccount,
+                    cloudrole,
+                    kingdom);
+
+            System.out.println("KEYS");
+            result.getItems().stream().forEach(System.out::println);
+            // Get first one for now
+            if (result.getItems().size() > 0) {
+                Key localKey = result.getItems().get(0);
+                this.keyId = localKey.getKeyId();
+                this.currentKeyVersion = localKey.getCurrentVersionId().toString();
+            }
+        }
+        catch (Exception e) {
+            e.printStackTrace();;
         }
 
-        // Get current key version
-        if (keyVersions != null && keyVersions.getItems().size() >= 1) {
-            KeyVersion version = keyVersions.getItems().get(0);
-            this.currentKeyVersion = version.getVersionId().toString();
-            System.out.println("VERSION: " + version);
-        }
+        System.out.println("current key ID: " + this.keyId);
         System.out.println("current key version: " + currentKeyVersion);
-
     }
 
 
