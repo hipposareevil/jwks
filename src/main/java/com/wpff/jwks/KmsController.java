@@ -7,12 +7,10 @@ import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jose.util.Base64URL;
 import com.salesforce.sds.kms.client.kmsOpenAPIJavaClient.model.SmsSignature;
-import org.spongycastle.openssl.PEMWriter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 
-import java.io.StringWriter;
 import java.net.URI;
 
 import java.util.*;
@@ -88,15 +86,7 @@ public class KmsController {
         System.out.println("");
     }
 
-    // Print public key as pem
-    private void printAsPem(PublicKey key) throws Exception {
-        StringWriter stringWriter = new StringWriter();
-        PEMWriter pemWriter = new PEMWriter(stringWriter);
-        pemWriter.writeObject(key);
-        pemWriter.close();
-        String pem = stringWriter.toString();
-        logit(pem);
-    }
+
 
 
     // Make jwk from RSA keypair
@@ -269,7 +259,8 @@ public class KmsController {
             // Get java publickey
             logit("public key:");
             logit(publicKey);
-            printAsPem(publicKey);
+            System.out.println(KeyServiceClient.getAsPem(publicKey));
+
 
             logit();
             logit();
@@ -406,7 +397,7 @@ public class KmsController {
         boolean result = clientside.verify(verifier);
         logit("RESULT: " + result);
 
-        printAsPem(ecPublicJWK.toPublicKey());
+        System.out.println(KeyServiceClient.getAsPem(ecPublicJWK.toPublicKey()));
 
         logit();
         logit("----------------------------------");
@@ -472,13 +463,15 @@ public class KmsController {
         String signatureAsString = signature.getSignature();
         Base64URL signature_base64 = new Base64URL(signatureAsString);
 
-        // TEST with der?
-        if (1 == 0) {
-            byte[] der = ECDSA.transcodeSignatureToDER(signature.getSignature().getBytes());
+        logit("Signature: " + signatureAsString);
+        logit("Signature: " + new String(signature_base64.decode()));
 
+        // TEST with der?
+        if (1 == 1) {
             int rsByteArrayLength = ECDSA.getSignatureByteArrayLength(header.getAlgorithm());
             //byte[] jwsSignature = ECDSA.transcodeSignatureToConcat(signature.getSignature().getBytes(), rsByteArrayLength);
-            byte[] jwsSignature = ECDSA.transcodeSignatureToConcat(der, rsByteArrayLength);
+            logit("array length: " + rsByteArrayLength);
+            byte[] jwsSignature = ECDSA.transcodeSignatureToConcat(signature.getSignature().getBytes(), rsByteArrayLength);
             logit("XXXX: sign. jwsSignature: " + new String(jwsSignature));
             signature_base64 = Base64URL.encode(jwsSignature);
         }
@@ -508,7 +501,7 @@ public class KmsController {
             logit("");
 
             logit("public key used:");
-            printAsPem(publicKey);
+              System.out.println(KeyServiceClient.getAsPem(publicKey));
 
             logit("JWT: " + jwtString);
             JWT incomingJwt = JWTParser.parse(jwtString);

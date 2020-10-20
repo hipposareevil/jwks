@@ -4,11 +4,16 @@ import com.salesforce.sds.kms.client.ApiException;
 import com.salesforce.sds.kms.client.kmsOpenAPIJavaClient.model.*;
 import com.salesforce.sds.kms.client.wrapper.DynamicKeyStoreConfig;
 import com.salesforce.sds.kms.client.wrapper.KmsClient;
+import org.spongycastle.openssl.PEMWriter;
 
 
 import java.io.File;
+import java.io.StringWriter;
 import java.security.KeyFactory;
+import java.security.PrivateKey;
 import java.security.Signature;
+import java.security.interfaces.ECPrivateKey;
+import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 
@@ -19,7 +24,8 @@ public class KeyServiceClient {
 
     // current key in KMS
     private String keyId =
-            "1:2:E00CB9B35823BD2AAB612E696E21A63622BB9A432A2F282911056A228C29B92F:2861f689-4e24-4999-ab97-f0541ba2d288";
+            "1:2:E00CB9B35823BD2AAB612E696E21A63622BB9A432A2F282911056A228C29B92F:e2886d55-04f1-4323-b1a7-c21224a40394";
+
     // Retrieve first current key from api
     private String currentKeyVersion = null;
 
@@ -44,15 +50,36 @@ public class KeyServiceClient {
     // KMS client
     private final KmsClient client;
 
+    // Caches public key
+    private java.security.PublicKey cachePublicKey = null;
+
+
     // One util
     private static final KeyServiceClient singleton = new KeyServiceClient();
 
     /**
      * Get util singleton
+     *
      * @return
      */
     public static KeyServiceClient getClient() {
         return singleton;
+    }
+
+    /**
+     * Get key as PEM format
+     *
+     * @param key
+     * @return
+     * @throws Exception
+     */
+    public static String getAsPem(java.security.PublicKey key) throws Exception {
+        StringWriter stringWriter = new StringWriter();
+        PEMWriter pemWriter = new PEMWriter(stringWriter);
+        pemWriter.writeObject(key);
+        pemWriter.close();
+        String pem = stringWriter.toString();
+        return pem;
     }
 
     /**
@@ -61,11 +88,11 @@ public class KeyServiceClient {
     public KeyServiceClient() {
         // validate the paths
         File ca = new File(CA_PATH);
-        if (! ca.exists() || ! ca.canRead()) {
+        if (!ca.exists() || !ca.canRead()) {
             System.out.println("NO CA PATH: " + CA_PATH);
         }
         File md = new File(MONITORING_DIR);
-        if (! md.exists() || ! ca.canRead()) {
+        if (!md.exists() || !ca.canRead()) {
             System.out.println("NO monitoring PATH: " + MONITORING_DIR);
         }
 
@@ -78,8 +105,9 @@ public class KeyServiceClient {
         KeyVersionList keyVersions = null;
         System.out.println("Getting key versions for keyid: " + keyId);
         try {
-            keyVersions = this.client.kmsApi().listKeyVersions(keyId, null, null, true,
-                    false, false, 10, null);
+            keyVersions = this.client.kmsApi().listKeyVersions(keyId,
+                    null, null, true,
+                    false, true, 10, null);
         } catch (ApiException e) {
             e.printStackTrace();
         }
@@ -88,11 +116,11 @@ public class KeyServiceClient {
         if (keyVersions != null && keyVersions.getItems().size() >= 1) {
             KeyVersion version = keyVersions.getItems().get(0);
             this.currentKeyVersion = version.getVersionId().toString();
+            System.out.println("VERSION: " + version);
         }
         System.out.println("current key version: " + currentKeyVersion);
     }
 
-    private java.security.PublicKey cachePublicKey = null;
 
     /**
      * Get java.security PublicKey from KMS. Caches the key.
@@ -110,10 +138,38 @@ public class KeyServiceClient {
         return this.cachePublicKey;
     }
 
+    /**
+     * Get private key
+     *
+     * @return private key
+     * @throws Exception
+     */
+    public java.security.interfaces.ECPrivateKey getPrivateKey() throws Exception {
+        String versionId = this.currentKeyVersion;
+        String xSFDCCustomerID = null;
+        String xCorrelationID = null;
+        KeyVersion result = this.client.kmsApi().
+                retrieveKeyMaterialByVersionId(versionId, xSFDCCustomerID, xCorrelationID);
+
+        ECPrivateKey key = toPrivate(result.getPlaintext());
+
+        return key;
+    }
+
+    /**
+     * Retrieve the current KID
+     *
+     * @return
+     */
     public String getKeyId() {
         return keyId;
     }
 
+    /**
+     * Return the current version for key.
+     *
+     * @return
+     */
     public String getCurrentKeyVersion() {
         return currentKeyVersion;
     }
@@ -142,7 +198,7 @@ public class KeyServiceClient {
      * Validate if the signature verifies against the incoming raw data.
      * This will use the current public key
      *
-     * @param rawData what was signed
+     * @param rawData   what was signed
      * @param signature base64 encoded signature
      * @return
      */
@@ -167,17 +223,13 @@ public class KeyServiceClient {
 
     ///////////////////////////////////
 
-    private java.security.PublicKey toRsaPub(PublicKey publicKey) throws Exception {
-        KeyFactory kf = KeyFactory.getInstance("RSA");
-        return toPub(publicKey, kf);
-    }
 
-    private java.security.PublicKey toECPub(PublicKey publicKey) throws Exception {
+    private static java.security.PublicKey toECPub(PublicKey publicKey) throws Exception {
         KeyFactory kf = KeyFactory.getInstance("EC");
         return toPub(publicKey, kf);
     }
 
-    private java.security.PublicKey toPub(PublicKey publicKey, KeyFactory kf) throws Exception {
+    private static java.security.PublicKey toPub(PublicKey publicKey, KeyFactory kf) throws Exception {
         final String publicKeyContent = getPublicKeyContent(publicKey);
 
         X509EncodedKeySpec keySpecX509 = new X509EncodedKeySpec(Base64.getDecoder().decode(publicKeyContent));
@@ -186,11 +238,40 @@ public class KeyServiceClient {
         return pubKey;
     }
 
-    private String getPublicKeyContent(PublicKey publicKey) {
+    /**
+     * Generate PrivateKey from incoming pem string
+     *
+     * @param privateKey
+     * @return
+     * @throws Exception
+     */
+    private static java.security.interfaces.ECPrivateKey toPrivate(String privateKey) throws Exception {
+        // remove the header/footer
+        final String keyContent = getPrivateKeyContent(privateKey);
+        KeyFactory kf = KeyFactory.getInstance("EC");
+
+        // Create spec to decode bits
+        PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(
+                Base64.getDecoder().decode(keyContent.getBytes()));
+
+        // make private key. convert to EC key as we're using elliptical curve
+        PrivateKey key = kf.generatePrivate(keySpec);
+        return (java.security.interfaces.ECPrivateKey) key;
+    }
+
+
+    private static String getPublicKeyContent(PublicKey publicKey) {
         return publicKey.getPublic()
                 .replaceAll("\\n", "")
                 .replace("-----BEGIN PUBLIC KEY-----", "")
                 .replace("-----END PUBLIC KEY-----", "");
+    }
+
+    private static String getPrivateKeyContent(String key) {
+        return key
+                .replaceAll("\\n", "")
+                .replace("-----BEGIN PRIVATE KEY-----", "")
+                .replace("-----END PRIVATE KEY-----", "");
     }
 
 
