@@ -422,7 +422,7 @@ public class KmsController {
         JWTClaimsSet claimsSet = new JWTClaimsSet.Builder()
                 .subject("got (kms) milk?")
                 .issuer(this.host)
-                .claim("scp", "super_duper_scope")
+                .claim("scp", scope)
                 .expirationTime(new Date(new Date().getTime() + 600 * 1000))
                 .build();
 
