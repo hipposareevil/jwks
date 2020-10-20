@@ -119,6 +119,7 @@ public class KeyServiceClient {
             System.out.println("VERSION: " + version);
         }
         System.out.println("current key version: " + currentKeyVersion);
+
     }
 
 

@@ -525,6 +525,8 @@ public class JwtController {
             java.security.PublicKey publicKey = ecJwk.toECKey().toPublicKey();
             JWSVerifier verifier = new ECDSAVerifier(ecJwk.toECKey().toECPublicKey());
 
+            System.out.println(KeyServiceClient.getAsPem(publicKey));
+
             String jwtString = signedJWT.serialize();
             System.out.println("");
             System.out.println("QQQQQQQQQQQQQQ");

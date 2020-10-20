@@ -87,8 +87,6 @@ public class KmsController {
     }
 
 
-
-
     // Make jwk from RSA keypair
     private JWK makeRsaJwk(KeyPair keyPair) {
         JWK jwk = new com.nimbusds.jose.jwk.RSAKey.Builder((RSAPublicKey) keyPair.getPublic())
@@ -189,8 +187,8 @@ public class KmsController {
         return "unknown or error";
     }
 
-    // Validate EC token
-    private String validateTokenEc(String jwtString) throws Exception {
+    // Validate JWT, extra verbose
+    private String validateTokenVerbose(String jwtString) throws Exception {
         logit("");
         logit("");
         logit("=====================");
@@ -353,13 +351,13 @@ public class KmsController {
     ///////////////////////////////////////////////////////////
 
     // Create JWT
-    @RequestMapping("/kms/normal/gotJwt")
+    @RequestMapping("/kms/jose/gotJwt")
     public String gotJwtEC_base(@RequestParam String scope) throws Exception {
         logit();
         logit();
         logit();
         logit("-------------");
-        logit("normal/gotJwt");
+        logit("jose/gotJwt");
 
                // Prepare JWT with claims set
         JWTClaimsSet claimsSet = new JWTClaimsSet.Builder()
@@ -383,14 +381,14 @@ public class KmsController {
         signedJWT.sign(signer);
 
         // Serialize the JWS to compact form
-        String serializedSignature = signedJWT.serialize();
+        String serializedJWT = signedJWT.serialize();
 
         // CLIENT test
         logit();
         logit("----------------------------------");
         logit("Verify via ECDSA:");
         logit();
-        SignedJWT clientside = SignedJWT.parse(serializedSignature);
+        SignedJWT clientside = SignedJWT.parse(serializedJWT);
         com.nimbusds.jose.jwk.ECKey ecPublicJWK = ecJoseJwk.toPublicJWK();
         JWSVerifier verifier = new ECDSAVerifier(ecPublicJWK);
 
@@ -404,151 +402,48 @@ public class KmsController {
         logit();
         // CLIENT
 
-        return serializedSignature;
+        return serializedJWT;
     }
 
 
-    // Create JWT using KMS signature
+    // Create JWT using KMS private key
     @RequestMapping("/kms/kms/gotJwt")
     public String gotJwtEC(@RequestParam String scope) throws Exception {
-            logit();
-            logit();
-            logit();
+        logit();
+        logit();
+        logit();
         logit("-------------");
         logit("kms/gotJwt");
-        logit("");
+
+        logit("Public key:");
+        logit(KeyServiceClient.getAsPem(this.keyClient.getPublicKey()));
 
         // Prepare JWT with claims set
         JWTClaimsSet claimsSet = new JWTClaimsSet.Builder()
                 .subject("got (kms) milk?")
-                .claim("scp", scope)
                 .issuer(this.host)
+                .claim("scp", "super_duper_scope")
                 .expirationTime(new Date(new Date().getTime() + 600 * 1000))
                 .build();
 
-        // Convert to base64url
-        com.nimbusds.jose.util.Base64URL claims_base64 = new Payload(claimsSet.toJSONObject())
-                .toBase64URL();
+        // Create the EC signer
+        JWSSigner signer = new ECDSASigner(this.keyClient.getPrivateKey());
+        String kid = this.keyClient.getKeyId();
 
-        // Header
-        String keyId = this.keyClient.getKeyId();
-        JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.ES256)
-                .keyID(keyId)
-                .jwkURL(new URI(getWellKnownUrl()))
-                .build();
-        // convert to base64url
-        com.nimbusds.jose.util.Base64URL header_base64 = header.toBase64URL();
-
-        logit("");
-        logit("header");
-        logit(header_base64);
-        logit(header_base64.decodeToString());
-
-        logit("");
-        logit("claims/payload:");
-        logit(claims_base64);
-        logit(claims_base64.decodeToString());
-
-        // what to sign = header + . + claims/payload
-        String dataToSign =
-                header_base64.toString() +
-                "." +
-                claims_base64.toString();
-
-        logit("");
-        logit("DATA to sign: " + dataToSign);
-
-        // Make signature with KMS, this will be base64 encoded
-        SmsSignature signature = this.keyClient.signData(dataToSign);
-        String signatureAsString = signature.getSignature();
-        Base64URL signature_base64 = new Base64URL(signatureAsString);
-
-        logit("Signature: " + signatureAsString);
-        logit("Signature: " + new String(signature_base64.decode()));
-
-        // TEST with der?
-        if (1 == 1) {
-            int rsByteArrayLength = ECDSA.getSignatureByteArrayLength(header.getAlgorithm());
-            //byte[] jwsSignature = ECDSA.transcodeSignatureToConcat(signature.getSignature().getBytes(), rsByteArrayLength);
-            logit("array length: " + rsByteArrayLength);
-            byte[] jwsSignature = ECDSA.transcodeSignatureToConcat(signature.getSignature().getBytes(), rsByteArrayLength);
-            logit("XXXX: sign. jwsSignature: " + new String(jwsSignature));
-            signature_base64 = Base64URL.encode(jwsSignature);
-        }
-        // END TEST
-
-
-        // Create signed JWT with the header, claims, and signature
-        // sign with the 3 parts
         SignedJWT signedJWT = new SignedJWT(
-                header_base64,
-                claims_base64,
-                signature_base64);
+                new JWSHeader.Builder(JWSAlgorithm.ES256)
+                        .keyID(kid)
+                        .jwkURL(new URI(getWellKnownUrl()))
+                        .build(),
+                claimsSet);
 
-        logit("");
-        logit("signature: \n" + new String(signature.getSignature()));
-        logit("");
+        // Compute the EC signature
+        signedJWT.sign(signer);
 
+        // Serialize the JWS to compact form
+        String serializedJwt = signedJWT.serialize();
 
-        // TEST with ECDSA/normal route
-        if (1 == 1) {
-            java.security.PublicKey publicKey = ecKmsJwk.toECKey().toPublicKey();
-            JWSVerifier verifier = new ECDSAVerifier(ecKmsJwk.toECKey().toECPublicKey());
-
-            String jwtString = signedJWT.serialize();
-            logit("");
-            logit("Testing with ECDSA");
-            logit("");
-
-            logit("public key used:");
-              System.out.println(KeyServiceClient.getAsPem(publicKey));
-
-            logit("JWT: " + jwtString);
-            JWT incomingJwt = JWTParser.parse(jwtString);
-            JWSObject jwsObject = (SignedJWT) incomingJwt;
-            boolean verified = jwsObject.verify(verifier);
-
-            logit("---> Verified via ECDSA: " + verified);
-            logit("");
-            logit("DONE Testing with ECDSA");
-            logit("");
-        }
-        // end TEST 2
-
-        if (1 == 1) {
-            try {
-                // Validate signature via 
-
-                // public key from JWK
-                java.security.PublicKey publicKey = ecKmsJwk.toECKey().toPublicKey();
-                logit("Public key:");
-                logit(publicKey);
-                logit("");
-
-                // Get the data we sent to be signed
-                String headerAndPayload = signedJWT.getHeader().toBase64URL().toString() + "." +
-                        signedJWT.getPayload().toBase64URL().toString();
-
-                logit("header payload, should match 'DATA to sign' above: ");
-                logit(headerAndPayload);
-
-                String base64signature = signedJWT.getSignature().toString();
-                logit("signature from JWT: ");
-                logit(base64signature);
-
-                boolean valid = this.keyClient.checkSignature(
-                    headerAndPayload, base64signature
-                                                              );
-                logit("---> VERIFY with kms and key client: " + valid);
-
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-
-        // return jwt
-        
-        return signedJWT.serialize();
+        return serializedJwt;
     }
 
     // Create RSA JWT
@@ -606,16 +501,16 @@ public class KmsController {
     }
 
     // Validate jwt
-    @PostMapping("/kms/normal/validate")
+    @PostMapping("/kms/validate")
     String validateRsa(@RequestBody JwtData jwt) throws Exception {
         String result = validateToken(jwt.data);
         return result;
     }
 
-    // Validate jwt with KMS validation
-    @PostMapping("/kms/kms/validate")
+    // Validate jwt with verbose validation
+    @PostMapping("/kms/verbose/validate")
     String validateEc(@RequestBody JwtData jwt) throws Exception {
-        String result = validateTokenEc(jwt.data);
+        String result = validateTokenVerbose(jwt.data);
         return result;
     }
 
