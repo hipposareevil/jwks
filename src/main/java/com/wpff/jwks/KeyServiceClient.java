@@ -42,7 +42,7 @@ public class KeyServiceClient {
     public static final String MONITORING_DIR = "/tmp/kms/dktool_repo/user/client";
 
     // Role for creating the Tenant
-    public static final String ROLE = "hawking.superfunk";
+    public static final String ROLE = "foundation.superfunk";
 
     public static final String baseUrl = "https://api.kms.crypto.dev1-uswest2.aws.sfdc.cl";
 
