@@ -37,7 +37,7 @@ import com.nimbusds.jwt.proc.*;
 @RestController
 public class JwtController {
 
-    @Value("${host}")
+    @Value("${our.host}")
     private String host;
 
     // 'aud' JWT scope.
