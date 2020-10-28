@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.salesforce.einstein.hawking.auth.grpc.jwt";
+option java_outer_classname = "JwtExchangeProto";
+
+package auth.c2c.jwt;
+
+// C2C JWT
+message C2CExchangeRequest {
+  string token = 1;
+}
+
+
+// Hawking Auth JWT
+message C2CExchangeResponse {
+  string token = 1;
+}
+
+
+service JwtExchange {
+  rpc exchangeC2CForJwt(C2CExchangeRequest) returns (C2CExchangeResponse) {}
+}
+
+
