@@ -1,4 +1,4 @@
-package com.wpff.jwks;
+package com.wpff.endpoints;
 
 public class JwtData {
     public String getData() {

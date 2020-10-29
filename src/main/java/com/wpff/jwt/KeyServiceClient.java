@@ -1,4 +1,4 @@
-package com.wpff.jwks;
+package com.wpff.jwt;
 
 import com.salesforce.sds.kms.client.ApiException;
 import com.salesforce.sds.kms.client.kmsOpenAPIJavaClient.model.*;

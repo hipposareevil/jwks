@@ -3,27 +3,40 @@ package com.wpff.grpc;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.protobuf.services.ProtoReflectionService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.event.EventListener;
 
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
+
+@Configuration
 public class GrpcServer {
   private static final Logger logger = Logger.getLogger(GrpcServer.class.getName());
 
+  @Autowired
   private Server server;
 
-  public void start() throws IOException {
-    /* The port on which the server should run */
-    int port = 50051;
+  @Bean
+  public Server grpcServerBean(JwtExchange exchange) {
+    int port = 7443;
     server = ServerBuilder.forPort(port)
             .addService(new GreeterImpl())
+            .addService(exchange)
             .addService(ProtoReflectionService.newInstance())
-            .build()
-            .start();
+            .build();
 
+    return server;
+  }
 
-    logger.info("Server started, listening on " + port);
+  @EventListener
+  public void start(ApplicationReadyEvent event) throws Exception {
+    server.start();
+
     Runtime.getRuntime().addShutdownHook(new Thread() {
       @Override
       public void run() {
@@ -37,6 +50,8 @@ public class GrpcServer {
         System.err.println("*** server shut down");
       }
     });
+
+    server.awaitTermination();
   }
 
   public void stop() throws InterruptedException {
