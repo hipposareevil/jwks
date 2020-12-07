@@ -34,18 +34,18 @@ public class KeyServiceClient {
     // Public CA for server
     // in k8s: /etc/identity/ca
     // public static final String CA_PATH = "/etc/identity/ca";
-    public static final String CA_PATH = "/tmp/kms/dktool_repo/ca";
+    public static final String CA_PATH = "/kms/dktool_repo/ca";
 
     // This is where client (our) pems files are:
     // dktool_repo/user/client/certificates/client.pem
     // dktool_repo/user/client/keys/client-key.pem
     // in k8s: /etc/identity/client
     // public static final String MONITORING_DIR = "/etc/identity/client";
-    public static final String MONITORING_DIR = "/tmp/kms/dktool_repo/user/client";
+    public static final String MONITORING_DIR = "/kms/dktool_repo/user/client";
 
     // Role for creating the KMS Tenant
     // Note this has to match the OU in the pem file
-    public static final String ROLE = "foundation.superfunk";
+    public static final String ROLE = "hawking-foundation.superfunk";
 
     public static final String baseUrl = "https://api.kms.crypto.dev1-uswest2.aws.sfdc.cl";
 

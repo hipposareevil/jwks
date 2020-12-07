@@ -244,6 +244,7 @@ public class JwtController {
         SignedJWT signedJWT = new SignedJWT(
                 new JWSHeader.Builder(JWSAlgorithm.ES256)
                         .keyID(kid)
+                        //.jwk(this.ecJwk)
                         .jwkURL(new URI(well_known_uri))
                         .build(),
                 claimsSet);
